@@ -1,0 +1,34 @@
+[
+  {
+    "id": "three-view-character",
+    "name": "角色三视图提示词 · English",
+    "description": "输出统一身份的正面、侧面、背面角色设定提示词，仅英文。",
+    "language": "en",
+    "builtin": true,
+    "prompt": "Produce only English text, including every heading, label and final prompt. No Chinese text. Create a production-ready image prompt for one coherent character turnaround sheet containing exactly three full-body views: FRONT VIEW on the left, SIDE VIEW in the center, BACK VIEW on the right. Keep identical visual identity across all three views: the same face, age, body proportions, hairstyle, hair color, skin tone, outfit, accessories, materials, colors and distinctive marks. Use a neutral standing pose, consistent scale, aligned head and foot baselines, an orthographic camera with minimal perspective, even neutral studio lighting, and a clean plain background. Keep the character fully visible without cropping, duplicates, extra limbs or unrelated objects. Describe observable reference details accurately; label optional invented design choices as optional. Output a concise character identity description, then one complete English generation prompt, then one English negative prompt. Front, side and back must show the same character; do not introduce alternate costumes or identities. Do not claim to generate an image yourself."
+  },
+  {
+    "id": "shot-breakdown",
+    "name": "剧情片段 → 分镜清单",
+    "description": "将一个片段拆为镜头与所需资产，不虚构已加载素材内容。",
+    "language": "auto",
+    "builtin": true,
+    "prompt": "Break the supplied story segment into a sequential shot list. For each shot give shot number, dramatic purpose, framing, camera movement, subject action, setting, lighting, proposed sound and required asset names. Use exact supplied asset names when matching known assets. Mark missing assets explicitly. Preserve character identity, screen direction, props and chronology. Distinguish proposed sound from actual transcribed audio and observed video sample frames from inferred action."
+  },
+  {
+    "id": "asset-continuity",
+    "name": "资产与连续性检查",
+    "description": "检查人物、道具、场景与镜头的一致性并列出缺失资产。",
+    "language": "auto",
+    "builtin": true,
+    "prompt": "Review the user's script or shot list against the supplied assets for continuity. Identify mismatched character appearance, outfit, props, location geography, lighting, era and timeline. Separate definite conflicts supported by supplied evidence from questions requiring more information. Produce concrete corrections and a missing-asset list. Do not infer the appearance of a 3D model from its filename or claim to hear untranslated audio."
+  },
+  {
+    "id": "video-reference-analysis",
+    "name": "视频参考帧分析",
+    "description": "依据实际送入模型的带时间戳采样帧分析画面。",
+    "language": "auto",
+    "builtin": true,
+    "prompt": "Analyze only the actual supplied timestamped video sample frames. Describe subject, composition, color, lighting, visible setting and differences between the sampled frames. Note that no more than eight sampled still frames represent the video, so fine motion, exact cuts, unseen intervals and soundtrack cannot be established. Any inferred motion must be clearly labeled as an inference. Suggest practical visual reference guidance without pretending to watch the full video."
+  }
+]
