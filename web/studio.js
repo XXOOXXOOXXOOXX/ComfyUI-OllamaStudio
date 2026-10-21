@@ -23,7 +23,7 @@ function readPrefs() {
     let saved = {}; try { saved = JSON.parse(localStorage.getItem(PREFS_KEY) || "{}"); } catch { /* recover corrupt local preferences */ }
     saved.selected_skills = [...new Set((Array.isArray(saved.selected_skills) ? saved.selected_skills : [saved.selected_skill]).filter(id => typeof id === "string" && id))];
     return { view: "floating", rect: { x: Math.max(16, innerWidth - 600), y: 30, width: 560, height: Math.min(800, innerHeight - 60) },
-        dock_width: 510, host: "http://localhost:11434", model: "", selected_skill: "", favorites: [], eagle_enabled: false,
+        dock_width: 510, host: "http://localhost:11434", model: "", selected_skill: "", favorites: [], eagle_enabled: false, image_bridge_enabled: false,
         mode: { kind: "chat" }, conversation_id: null, ...saved, rect: { width: 560, height: 760, x: Math.max(16, innerWidth - 600), y: 30, ...saved.rect } };
 }
 function kindOf(item) {
@@ -55,7 +55,7 @@ function modelStorageSize(model) {
 
 export class OllamaStudio {
     constructor({ app, api }) {
-        this.app = app; this.api = api; this.prefs = readPrefs(); this.models = []; this.skills = []; this.uploads = []; this.eagleRefs = [];
+        this.app = app; this.api = api; this.prefs = readPrefs(); this.models = []; this.skills = []; this.uploads = []; this.imageRefs = []; this.eagleRefs = [];
         this.conversation = { messages: [], title: "新对话" }; this.chatRevision = 0; this.busy = false; this.initializing = true; this.dragDepth = 0;
         this.root = node("div", { class: "os-host", id: "ollama-studio" });
         this.panel = node("section", { class: "os-panel", role: "region", "aria-label": "Ollama 创作工作室" });
@@ -68,7 +68,8 @@ export class OllamaStudio {
         this.actions = node("div", { class: "os-compose-actions" });
         this.actions.append(button("添加文件", "＋", "upload", "os-icon"), this.modeButton = button("创作模式", "对话创作⌄", "mode", "os-mode-button"),
             this.modelButton = button("选择本地模型", "选择模型", "models", "os-model-button"), button("Skill 技能", "⌘", "skills", "os-icon"),
-            this.eagleButton = button("开启 Eagle 素材", "E", "eagle", "os-icon os-eagle"), node("div", { class: "os-spacer" }),
+            this.eagleButton = button("开启 Eagle 素材", "E", "eagle", "os-icon os-eagle"),
+            this.imageBridgeButton = button("开启图片直连素材", "Z", "image-bridge", "os-icon os-eagle"), node("div", { class: "os-spacer" }),
             this.sendButton = button("发送消息", "↑", "send", "os-send"), this.stopButton = button("停止生成", "■", "stop", "os-send os-stop"));
         this.stopButton.hidden = true;
         this.meta = node("div", { class: "os-compose-meta" }, this.skillBadge = node("span"), this.capability = node("span", { text: "连接本地 Ollama" }));
@@ -195,6 +196,7 @@ export class OllamaStudio {
             if (action === "mode") return this.modeDialog();
             if (action === "upload") return this.fileInput.click();
             if (action === "eagle") { this.prefs.eagle_enabled = !this.prefs.eagle_enabled; this.savePrefs(); this.syncEagle(); return this.updateControls(); }
+            if (action === "image-bridge") { this.prefs.image_bridge_enabled = !this.prefs.image_bridge_enabled; this.savePrefs(); this.syncEagle(); return this.updateControls(); }
             if (action === "send") return await this.send();
             if (action === "stop") return this.stop();
         } catch (error) { this.showStatus(error.message, true); }
@@ -238,6 +240,7 @@ export class OllamaStudio {
             this.activeSkill.append(node("div", { class: "os-active-skill", dataset: { skillId: skill.id } }, node("span", { text: "Skill · " + skill.name }), remove));
         }
         this.eagleButton.dataset.on = String(!!this.prefs.eagle_enabled); this.eagleButton.title = this.eagleButton.ariaLabel = this.prefs.eagle_enabled ? "关闭 Eagle 素材" : "开启 Eagle 素材";
+        this.imageBridgeButton.dataset.on = String(!!this.prefs.image_bridge_enabled); this.imageBridgeButton.title = this.imageBridgeButton.ariaLabel = this.prefs.image_bridge_enabled ? "关闭图片直连素材" : "开启图片直连素材";
         this.sendButton.hidden = this.busy; this.stopButton.hidden = !this.busy;
         this.sendButton.disabled = this.busy || this.initializing || !this.prefs.model || this.uploads.some(item => item.pending);
         this.prompt.disabled = this.busy;
@@ -293,7 +296,7 @@ export class OllamaStudio {
         if (item.preview && typeof item.preview === "object") return this.api.apiURL("/view?" + new URLSearchParams(item.preview));
         return item.preview_url ? this.api.apiURL(item.preview_url) : item.media_url ? this.api.apiURL(item.media_url) : item.id ? this.api.apiURL("/ollama_studio/media/" + encodeURIComponent(item.id)) : "";
     }
-    openAsset(item, gallery = [...this.uploads, ...(this.prefs.eagle_enabled ? this.eagleRefs : [])]) {
+    openAsset(item, gallery = [...this.uploads, ...this.imageRefs, ...(this.prefs.eagle_enabled ? this.eagleRefs : [])]) {
         this.closeAsset?.();
         const describe = value => ({ kind: kindOf(value), url: value.media_url ? this.api.apiURL(value.media_url) : this.mediaURL(value) });
         const items = gallery.filter(value => !value.pending && !value.error && describe(value).url);
@@ -301,7 +304,7 @@ export class OllamaStudio {
     }
     renderAttachments() {
         this.attachments.querySelectorAll("audio,video").forEach(player => player.pause()); this.attachments.replaceChildren();
-        for (const [source, items] of [["上传", this.uploads], ["Eagle", this.prefs.eagle_enabled ? this.eagleRefs : []]]) for (const item of items) {
+        for (const [source, items] of [["上传", this.uploads], ["图片直连", this.imageRefs], ["Eagle", this.prefs.eagle_enabled ? this.eagleRefs : []]]) for (const item of items) {
             const kind = kindOf(item), card = node("div", { class: "os-attachment", dataset: { source, id: item.id || item.item_id || item.local_id, kind } });
             card.title = "双击放大查看素材";
             card.addEventListener("dblclick", event => { if (event.target.closest(".os-remove")) return; event.preventDefault(); event.stopPropagation(); card.querySelectorAll("audio,video").forEach(media => media.pause()); this.openAsset(item); }, true);
@@ -316,6 +319,8 @@ export class OllamaStudio {
         }
     }
     syncEagle() {
+        try { const refs = this.prefs.image_bridge_enabled ? globalThis.EagleAssetsStudioBridge?.getImageSelection?.() || [] : []; this.imageRefs = Array.isArray(refs) ? refs : []; }
+        catch { this.imageRefs = []; }
         if (!this.prefs.eagle_enabled) { this.eagleRefs = []; this.renderAttachments(); return; }
         try { const refs = globalThis.EagleAssetsStudioBridge?.getSelection?.() || []; this.eagleRefs = Array.isArray(refs) ? refs : []; }
         catch { this.eagleRefs = []; }
@@ -348,12 +353,13 @@ export class OllamaStudio {
     async send() {
         if (this.busy || this.uploads.some(item => item.pending)) return;
         const startedAt = performance.now();
-        const text = this.prompt.value.trim(), uploads = this.uploads.filter(item => item.id && !item.error), refs = this.prefs.eagle_enabled ? [...this.eagleRefs] : [];
-        if (!text && !uploads.length && !refs.length) return;
+        this.syncEagle();
+        const text = this.prompt.value.trim(), uploads = this.uploads.filter(item => item.id && !item.error), images = [...this.imageRefs], refs = this.prefs.eagle_enabled ? [...this.eagleRefs] : [];
+        if (!text && !uploads.length && !images.length && !refs.length) return;
         if (!this.prefs.model) { this.showStatus("请先选择已安装的 Ollama 模型。", true); return; }
         if (!this.conversation.id) await this.newConversation();
         const revision = ++this.chatRevision;
-        const user = { id: "local-user-" + revision, role: "user", content: text, attachments: [...uploads, ...refs] };
+        const user = { id: "local-user-" + revision, role: "user", content: text, attachments: [...uploads, ...images, ...refs] };
         const assistant = { id: "local-assistant-" + revision, role: "assistant", content: "", thinking: "", warnings: [], status: "generating" };
         this.conversation.messages.push(user, assistant); this.renderMessages(); const card = this.messages.lastElementChild; card.classList.add("os-live");
         this.prompt.value = ""; this.busy = true; this.updateControls(); this.showStatus("正在生成…"); this.abortController = new AbortController();
@@ -362,6 +368,7 @@ export class OllamaStudio {
         try {
             const body = { conversation_id: this.conversation.id, host: this.prefs.host, model: this.prefs.model, text, mode: this.prefs.mode,
                 skill_ids: [...this.prefs.selected_skills], upload_ids: uploads.map(item => item.id),
+                image_refs: images.map(item => ({ snapshot_id: item.snapshot_id, item_id: item.item_id })),
                 eagle_refs: refs.map(item => ({ item_id: item.item_id, ...(item.snapshot_id ? { snapshot_id: item.snapshot_id } : { catalog_id: item.catalog_id }) })),
                 transcripts: this.transcripts || {}, manual_transcript: this.manualTranscript || "", asr_model_path: this.asrModelPath || "" };
             const response = await this.api.fetchApi("/ollama_studio/chat", { ...this.json("POST", body), signal: this.abortController.signal });

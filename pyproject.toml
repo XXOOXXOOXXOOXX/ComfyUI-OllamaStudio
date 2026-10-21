@@ -1,6 +1,6 @@
 [project]
 name = "comfyui-ollama-studio"
-version = "1.2.1"
+version = "1.4.0"
 description = "Local Ollama creative chat with a floating/docked studio, media references, screenplay settings and prompt skills"
 requires-python = ">=3.10"
 dependencies = ["aiohttp>=3.9", "Pillow>=9.0"]

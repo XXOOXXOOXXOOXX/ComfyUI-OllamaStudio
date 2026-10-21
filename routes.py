@@ -248,13 +248,13 @@ def register_routes():
             text = data.get("text", "")
             if not isinstance(text, str) or len(text) > 120000:
                 raise StudioError("消息必须为文字且最多 120000 字符。")
-            if not text.strip() and not data.get("upload_ids") and not data.get("eagle_refs"):
+            if not text.strip() and not data.get("upload_ids") and not data.get("eagle_refs") and not data.get("image_refs"):
                 raise StudioError("请填写消息或添加素材。")
             from .prompts import selected_skill_ids
             skill_ids = selected_skill_ids(data.get("skill_id"), data.get("skill_ids"))
             system = system_prompt(store, data.get("mode"), skill_ids=skill_ids)
             prepared = await asyncio.to_thread(prepare_media, store, data.get("upload_ids"), data.get("eagle_refs"), data.get("transcripts"),
-                                             data.get("manual_transcript", ""), data.get("asr_model_path"))
+                                             data.get("manual_transcript", ""), data.get("asr_model_path"), data.get("image_refs"))
             warnings = prepared["warnings"]
             config = store.config()
             messages, model_content = _messages(conversation, system, text, prepared, config.get("repetition_guard", True))

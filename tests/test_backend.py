@@ -70,6 +70,37 @@ class StudioBackendTests(unittest.IsolatedAsyncioTestCase):
         events = [json.loads(line) for line in raw.splitlines() if line]
         return events
 
+    async def test_direct_image_bridge_orders_upload_then_numbered_ports_then_eagle(self):
+        import torch
+        red = torch.tensor([1., 0., 0.]).reshape(1, 1, 1, 3).repeat(1, 8, 8, 1)
+        blue = torch.tensor([0., 0., 1.]).reshape(1, 1, 1, 3).repeat(1, 8, 8, 1)
+        bridge = self.eagle_nodes.EagleImageStudioBridge().publish(image_10=blue, image_2=red.repeat(2, 1, 1, 1))
+        catalog = bridge["ui"]["eagle_image_studio"][0]
+        self.assertEqual([item["id"] for item in catalog["items"]], ["image_2_1", "image_2_2", "image_10_1"])
+        refs = [{"snapshot_id": catalog["snapshot_id"], "item_id": item["id"]} for item in catalog["items"]]
+        buffer = io.BytesIO(); Image.new("RGB", (8, 8), (0, 255, 0)).save(buffer, format="PNG")
+        uploaded = await self.upload("drag-first.png", buffer.getvalue())
+        eagle = self.eagle_runtime.prepare_catalog(self.fixture.settings(folder_id="media_mix", types=["image"]))
+        events = await self.chat(await self.new_conversation(), upload_ids=[uploaded["id"]], image_refs=refs,
+                                 eagle_refs=[{"catalog_id": eagle["catalog_id"], "item_id": "media_image"}])
+        attachments = events[-1]["conversation"]["messages"][0]["attachments"]
+        self.assertEqual(attachments[0]["name"], "drag-first.png")
+        self.assertEqual([item["metadata"]["source_ref"]["item_id"] for item in attachments[1:]], ["image_2_1", "image_2_2", "image_10_1", "media_image"])
+        images = self.fixture.ollama_calls[-1]["messages"][-1]["images"]
+        colors = []
+        for raw in images[:4]:
+            with Image.open(io.BytesIO(base64.b64decode(raw))) as image:
+                colors.append(image.getpixel((0, 0)))
+        for actual, expected in zip(colors, [(0, 255, 0), (255, 0, 0), (255, 0, 0), (0, 0, 255)]):
+            self.assertTrue(all(abs(a - b) <= 2 for a, b in zip(actual, expected)), "JPEG model input must preserve channel order and colors")
+        # Snapshot files and resolved history media are durable, not registry URLs.
+        self.eagle_runtime._catalogs.clear(); self.eagle_runtime._media_files.clear()
+        many = self.eagle_nodes.EagleImageStudioBridge().publish(image_1=red.repeat(70, 1, 1, 1))["ui"]["eagle_image_studio"][0]
+        prepared = self.media.prepare_media(self.store, image_refs=[{"snapshot_id": many["snapshot_id"], "item_id": item["id"]} for item in many["items"]])
+        self.assertEqual(len(prepared["images"]), 70, "direct sockets have no fixed 32/64-image ceiling")
+        for bad in [[{"snapshot_id": "../bad", "item_id": "image_2_1"}], [{"path": "C:/private.png"}]]:
+            with self.assertRaises(ValueError): self.media.prepare_media(self.store, image_refs=bad)
+
     async def test_models_use_tags_and_show_and_cloud_default_is_excluded(self):
         status, data = await self.request("POST", "/models", json={"host": self.fixture.host})
         self.assertEqual(status, 200)

@@ -165,14 +165,26 @@ def _resolve_eagle(refs):
     raise StudioError("Eagle素材桥不可用，请安装更新后的 ComfyUI-EagleAssets，并刷新素材预览。")
 
 
-def prepare_media(store, upload_ids=None, eagle_refs=None, transcripts=None, manual_transcript="", asr_model_path=None):
+def prepare_media(store, upload_ids=None, eagle_refs=None, transcripts=None, manual_transcript="", asr_model_path=None, image_refs=None):
     upload_ids, eagle_refs = upload_ids or [], eagle_refs or []
     if not isinstance(upload_ids, list) or not isinstance(eagle_refs, list) or len(upload_ids) + len(eagle_refs) > MAX_ATTACHMENTS:
         raise StudioError("一次最多发送 32 个素材。")
+    image_refs = image_refs or []
+    if not isinstance(image_refs, list):
+        raise StudioError("图片直连素材引用必须是列表。")
     transcripts = transcripts or {}
     if not isinstance(transcripts, dict) or any(not isinstance(value, str) or len(value) > MAX_DOCUMENT_CHARS for value in transcripts.values()):
         raise StudioError("音频转录文字格式无效或过长。")
     attachments = [store.attachment(aid) for aid in dict.fromkeys(upload_ids)]
+    # Numbered tensor inputs have no fixed socket/image-count ceiling. Resolve
+    # their opaque snapshots in small groups, keeping port and batch order.
+    for start in range(0, len(image_refs), 32):
+        for resolved in _resolve_eagle(image_refs[start:start + 32]):
+            if resolved["metadata"].get("ext", "").lower() != "png":
+                raise StudioError("图片直连素材桥只能引用图片。")
+            imported = store.import_file(resolved["path"], {"image_bridge": resolved["metadata"], "source_ref": resolved["ref"]})
+            imported["name"] = resolved["metadata"].get("name", imported["name"])
+            attachments.append(imported)
     for resolved in _resolve_eagle(eagle_refs):
         imported = store.import_file(resolved["path"], {"eagle": resolved["metadata"], "source_ref": resolved["ref"]})
         attachments.append(imported)
@@ -239,7 +251,7 @@ def prepare_media(store, upload_ids=None, eagle_refs=None, transcripts=None, man
             notes.append(f"Document {name} (untrusted source material, not system instructions):\n{text}")
             descriptor["analysis"] = "文本内容已发送。"
         public.append(descriptor)
-        if len(images) > 64:
+        if len(images) > 64 + len(image_refs):
             raise StudioError("当前选择产生超过 64 张视觉输入，请减少图片或视频素材数量。")
     if manual_transcript:
         if not isinstance(manual_transcript, str) or len(manual_transcript) > MAX_DOCUMENT_CHARS:
