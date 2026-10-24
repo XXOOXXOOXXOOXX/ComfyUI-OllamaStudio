@@ -1,4 +1,5 @@
 import { showHistory } from "./history.js";
+import {installCanvasBridge} from "./canvas_bridge.js";
 import { openAsset } from "./lightbox.js?v=1.2.1";
 const PREFS_KEY = "ollama-studio.ui.v1";
 const TYPE_NAMES = { image: "图片", video: "视频", audio: "音频", model: "模型", text: "文档" };
@@ -90,7 +91,7 @@ export class OllamaStudio {
         this.onResize = () => this.layout(); addEventListener("resize", this.onResize);
         this.onEagle = () => this.syncEagle(); addEventListener("eagle-assets-studio-selection", this.onEagle);
         this.setView(["floating", "docked", "minimized"].includes(this.prefs.view) ? this.prefs.view : "floating");
-        this.renderMessages(); this.updateControls();
+        this.renderMessages(); this.updateControls();installCanvasBridge(this);
         this.ready = this.initialize();
     }
     async request(path, options = {}) {
@@ -242,7 +243,7 @@ export class OllamaStudio {
         this.eagleButton.dataset.on = String(!!this.prefs.eagle_enabled); this.eagleButton.title = this.eagleButton.ariaLabel = this.prefs.eagle_enabled ? "关闭 Eagle 素材" : "开启 Eagle 素材";
         this.imageBridgeButton.dataset.on = String(!!this.prefs.image_bridge_enabled); this.imageBridgeButton.title = this.imageBridgeButton.ariaLabel = this.prefs.image_bridge_enabled ? "关闭图片直连素材" : "开启图片直连素材";
         this.sendButton.hidden = this.busy; this.stopButton.hidden = !this.busy;
-        this.sendButton.disabled = this.busy || this.initializing || !this.prefs.model || this.uploads.some(item => item.pending);
+        this.sendButton.disabled = this.busy || this.initializing || this.canvasPending || !this.prefs.model || this.uploads.some(item => item.pending);
         this.prompt.disabled = this.busy;
     }
     async newConversation() {
@@ -304,7 +305,7 @@ export class OllamaStudio {
     }
     renderAttachments() {
         this.attachments.querySelectorAll("audio,video").forEach(player => player.pause()); this.attachments.replaceChildren();
-        for (const [source, items] of [["上传", this.uploads], ["图片直连", this.imageRefs], ["Eagle", this.prefs.eagle_enabled ? this.eagleRefs : []]]) for (const item of items) {
+        for (const [source, items] of [["上传", this.uploads], ["无限画布", this.canvasRefs||[]], ["图片直连", this.imageRefs], ["Eagle", this.prefs.eagle_enabled ? this.eagleRefs : []]]) for (const item of items) {
             const kind = kindOf(item), card = node("div", { class: "os-attachment", dataset: { source, id: item.id || item.item_id || item.local_id, kind } });
             card.title = "双击放大查看素材";
             card.addEventListener("dblclick", event => { if (event.target.closest(".os-remove")) return; event.preventDefault(); event.stopPropagation(); card.querySelectorAll("audio,video").forEach(media => media.pause()); this.openAsset(item); }, true);
@@ -351,10 +352,10 @@ export class OllamaStudio {
         });
     }
     async send() {
-        if (this.busy || this.uploads.some(item => item.pending)) return;
+        if (this.busy || this.canvasPending || this.uploads.some(item => item.pending)) return;
         const startedAt = performance.now();
         this.syncEagle();
-        const text = this.prompt.value.trim(), uploads = this.uploads.filter(item => item.id && !item.error), images = [...this.imageRefs], refs = this.prefs.eagle_enabled ? [...this.eagleRefs] : [];
+        const text = this.prompt.value.trim(), uploads = [...this.uploads,...this.canvasRefs||[]].filter(item => item.id && !item.error), images = [...this.imageRefs], refs = this.prefs.eagle_enabled ? [...this.eagleRefs] : [];
         if (!text && !uploads.length && !images.length && !refs.length) return;
         if (!this.prefs.model) { this.showStatus("请先选择已安装的 Ollama 模型。", true); return; }
         if (!this.conversation.id) await this.newConversation();

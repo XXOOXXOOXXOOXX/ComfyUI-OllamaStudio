@@ -345,6 +345,12 @@ def register_routes():
             raise
         except StudioError as exc:
             status = "error"
+            # Publish the stored partial answer before ending the response.
+            # A client can reload history immediately after receiving EOF.
+            if generated and cid:
+                await asyncio.to_thread(store.add_message, cid, "assistant", content, thinking=thinking, status=status, warnings=warnings,
+                                        elapsed_ms=round((time.monotonic() - started_at) * 1000))
+                generated = False
             if response is not None:
                 try:
                     await response.write((json.dumps({"type": "error", "message": str(exc)}, ensure_ascii=False) + "\n").encode("utf-8"))
